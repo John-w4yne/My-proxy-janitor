@@ -13,7 +13,7 @@ app.post(['/v1/chat/completions', '/chat/completions'], async (req, res) => {
   try {
     const authHeader = req.headers.authorization || '';
     const apiKey = authHeader.replace('Bearer ', '').trim() || process.env.GEMINI_API_KEY;
-    const model = req.body.model || 'gemini-2.5-flash';
+    const model = req.body.model;
     const isStream = req.body.stream === true;
 
         const contents = [];
