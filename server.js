@@ -71,14 +71,16 @@ app.post(['/v1/chat/completions', '/chat/completions'], async (req, res) => {
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
 
-      const reader = response.body.getReader();
+            const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let buffer = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -95,8 +97,18 @@ app.post(['/v1/chat/completions', '/chat/completions'], async (req, res) => {
           }
         }
       }
+      if (buffer.startsWith('data: ')) {
+        try {
+          const parsed = JSON.parse(buffer.slice(6));
+          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          if (text) {
+            res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`);
+          }
+        } catch (e) {}
+      }
       res.write('data: [DONE]\n\n');
       res.end();
+
     } else {
       const data = await response.json();
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
