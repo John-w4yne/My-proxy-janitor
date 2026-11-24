@@ -41,9 +41,10 @@ app.post(['/v1/chat/completions', '/chat/completions'], async (req, res) => {
         { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
         { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
       ],
-      generationConfig: {
-        temperature: req.body.temperature ?? 0.9,
-        maxOutputTokens: req.body.max_tokens || 2048
+        generationConfig: {
+        temperature: req.body.temperature ?? 0.8,
+        maxOutputTokens: (req.body.max_tokens && req.body.max_tokens > 0) ? req.body.max_tokens : 65536,
+        thinkingConfig: { thinkingBudget: 0 }
       }
     };
 
