@@ -16,12 +16,20 @@ app.post(['/v1/chat/completions', '/chat/completions'], async (req, res) => {
     const model = req.body.model || 'gemini-2.5-flash';
     const isStream = req.body.stream === true;
 
-    const contents = req.body.messages
-      .filter(m => m.role !== 'system')
-      .map(m => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      }));
+        const contents = [];
+    for (const m of req.body.messages) {
+      if (m.role === 'system') continue;
+      const role = m.role === 'assistant' ? 'model' : 'user';
+      if (contents.length > 0 && contents[contents.length - 1].role === role) {
+        contents[contents.length - 1].parts[0].text += '\n\n' + m.content;
+      } else {
+        contents.push({ role, parts: [{ text: m.content }] });
+      }
+    }
+    if (contents.length > 0 && contents[contents.length - 1].role === 'model') {
+      contents.push({ role: 'user', parts: [{ text: 'Continue.' }] });
+    }
+
 
     const systemInstruction = req.body.messages.find(m => m.role === 'system');
 
