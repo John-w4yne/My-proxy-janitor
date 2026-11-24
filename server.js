@@ -66,43 +66,54 @@ app.post(['/v1/chat/completions', '/chat/completions'], async (req, res) => {
       return res.status(response.status).send(errText);
     }
 
-        if (isStream) {
+            if (isStream) {
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
 
       const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      const processLine = (rawLine) => {
-        const line = rawLine.trim();
-        if (!line.startsWith('data:')) return;
-        const jsonStr = line.slice(5).trim();
-        if (!jsonStr || jsonStr === '[DONE]') return;
-        try {
-          const parsed = JSON.parse(jsonStr);
-          const candidate = parsed.candidates?.[0];
-          const parts = candidate?.content?.parts || [];
-          const text = parts.map(p => p.text || '').join('');
-          if (text) {
-            res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`);
-          }
-          if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
-            console.log('Motivo do corte:', candidate.finishReason);
-          }
-        } catch (e) {}
-      };
+      const decoder = new TextDecoder('utf-8');
+      let leftover = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-        for (const line of lines) processLine(line);
+        
+        leftover += decoder.decode(value, { stream: true });
+        const lines = leftover.split(/\r?\n/);
+        leftover = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6).trim();
+            if (!dataStr || dataStr === '[DONE]') continue;
+            try {
+              const parsed = JSON.parse(dataStr);
+              const parts = parsed.candidates?.?.content?.parts || [];
+              for (const part of parts) {
+                if (part.text) {
+                  res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: part.text } }] })}\n\n`);
+                }
+              }
+            } catch (e) {}
+          }
+        }
       }
-      if (buffer) processLine(buffer);
+
+      if (leftover.startsWith('data: ')) {
+        const dataStr = leftover.slice(6).trim();
+        if (dataStr && dataStr !== '[DONE]') {
+          try {
+            const parsed = JSON.parse(dataStr);
+            const parts = parsed.candidates?.?.content?.parts || [];
+            for (const part of parts) {
+              if (part.text) {
+                res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: part.text } }] })}\n\n`);
+              }
+            }
+          } catch (e) {}
+        }
+      }
 
       res.write('data: [DONE]\n\n');
       res.end();
