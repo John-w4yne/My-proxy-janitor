@@ -66,14 +66,33 @@ app.post(['/v1/chat/completions', '/chat/completions'], async (req, res) => {
       return res.status(response.status).send(errText);
     }
 
-    if (isStream) {
+        if (isStream) {
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
 
-            const reader = response.body.getReader();
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
+
+      const processLine = (rawLine) => {
+        const line = rawLine.trim();
+        if (!line.startsWith('data:')) return;
+        const jsonStr = line.slice(5).trim();
+        if (!jsonStr || jsonStr === '[DONE]') return;
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const candidate = parsed.candidates?.[0];
+          const parts = candidate?.content?.parts || [];
+          const text = parts.map(p => p.text || '').join('');
+          if (text) {
+            res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`);
+          }
+          if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+            console.log('Motivo do corte:', candidate.finishReason);
+          }
+        } catch (e) {}
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -81,33 +100,14 @@ app.post(['/v1/chat/completions', '/chat/completions'], async (req, res) => {
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split('\n');
         buffer = lines.pop();
+        for (const line of lines) processLine(line);
+      }
+      if (buffer) processLine(buffer);
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const parsed = JSON.parse(line.slice(6));
-              const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
-              if (text) {
-                const openAiChunk = {
-                  choices: [{ delta: { content: text } }]
-                };
-                res.write(`data: ${JSON.stringify(openAiChunk)}\n\n`);
-              }
-            } catch (e) {}
-          }
-        }
-      }
-      if (buffer.startsWith('data: ')) {
-        try {
-          const parsed = JSON.parse(buffer.slice(6));
-          const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          if (text) {
-            res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`);
-          }
-        } catch (e) {}
-      }
       res.write('data: [DONE]\n\n');
       res.end();
+    }
+
 
     } else {
       const data = await response.json();
