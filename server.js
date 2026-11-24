@@ -44,7 +44,6 @@ app.post(['/v1/chat/completions', '/chat/completions'], async (req, res) => {
         generationConfig: {
         temperature: req.body.temperature ?? 0.8,
         maxOutputTokens: (req.body.max_tokens && req.body.max_tokens > 0) ? req.body.max_tokens : 65536,
-        thinkingConfig: { thinkingBudget: 0 }
       }
     };
 
